@@ -26,15 +26,15 @@ func NewDeviceController(firstPort uint16, lastPort uint16) *DeviceController {
 }
 
 type Device struct {
-	Port string
+	Conn net.Conn
 	Name string
 	IP string
 	CancelFunc context.CancelFunc
 }
 
-func NewDevice(cancelFunc context.CancelFunc, name, ip, port string) *Device {
+func NewDevice(conn net.Conn, cancelFunc context.CancelFunc, name, ip, port string) *Device {
 	return &Device{
-		Port: port,
+		Conn: conn,
 		Name: name,
 		IP: ip,
 		CancelFunc: cancelFunc,
@@ -61,6 +61,7 @@ func StartProxyListener(ctx context.Context, device Device, port uint16) error {
 
 	go func() {
 		defer listener.Close()
+		defer device.Conn.Close()
 		select {
 		case <- proxyListenerCtx.Done():
 			return
@@ -72,47 +73,39 @@ func StartProxyListener(ctx context.Context, device Device, port uint16) error {
 		if err!=nil {
 			return fmt.Errorf("failed to accept connection: %v", err)
 		}
-		
-		deviceConn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", device.IP, device.Port))
-		if err!=nil {
-			return fmt.Errorf("failed to connect to device: %v", err)
-		}
 
 		proxyConnectionCtx, cancelProxyConnectionCtx := context.WithCancel(proxyListenerCtx)
 
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		defer cancelProxyConnectionCtx()
+
 		go func() {
-			var wg sync.WaitGroup
-			wg.Add(2)
-
-			defer cancelProxyConnectionCtx()
-
-			go func() {
-				defer clientConn.Close()
-				defer deviceConn.Close()
-				select {
-				case <-proxyConnectionCtx.Done():
-					return
-				}
-			}()
-			
-			go func() {
-				if err := proxyClientToDevice(clientConn, deviceConn, 1024); err!=nil {
-					logrus.Warnf("%v\n", err)
-				}
-				cancelProxyConnectionCtx()
-				wg.Done()
-			}()
-			
-			go func() {
-				if err := proxyDeviceToClient(deviceConn, clientConn, 1024); err!=nil {
-					logrus.Warnf("%v\n", err)
-				}
-				cancelProxyConnectionCtx()
-				wg.Done()
-			}()
-
-			wg.Wait()
+			defer clientConn.Close()
+			select {
+			case <-proxyConnectionCtx.Done():
+				return
+			}
 		}()
+		
+		go func() {
+			if err := proxyClientToDevice(clientConn, device.Conn, 1024); err!=nil {
+				logrus.Warnf("%v\n", err)
+			}
+			cancelProxyConnectionCtx()
+			wg.Done()
+		}()
+		
+		go func() {
+			if err := proxyDeviceToClient(device.Conn, clientConn, 1024); err!=nil {
+				logrus.Warnf("%v\n", err)
+			}
+			cancelProxyConnectionCtx()
+			wg.Done()
+		}()
+
+		wg.Wait()
 	}
 }
 

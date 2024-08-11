@@ -13,7 +13,6 @@ import (
 type DiscoverRequestHeader struct {
 	Name string `json:"name"`
 	Port string `json:"port"`
-	IP string `json:"ip"`
 }
 
 func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceController) {
@@ -68,7 +67,7 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 
 			ctx, cancel := context.WithCancel(context.Background())
 
-			device := proxy.NewDevice(cancel, header.Name, header.IP, header.Port)
+			device := proxy.NewDevice(cancel, header.Name, conn.RemoteAddr().String(), header.Port)
 			controller.Devices[port] = *device
 
 			go func() {
