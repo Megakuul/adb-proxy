@@ -23,7 +23,6 @@ type device struct {
 	ProxyPort string `json:"proxy_port"`
 	DeviceName string `json:"device_name"`
 	DeviceAddr string `json:"device_addr"`
-	DevicePort string `json:"device_port"`
 }
 
 type listDeviceResponse struct {
@@ -39,7 +38,6 @@ func (h *ListDeviceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ProxyPort: strconv.Itoa(int(k)),
 			DeviceName: v.Name,
 			DeviceAddr: v.IP,
-			DevicePort: strconv.Itoa(int(v.Port)),
 		})
 	}
 	h.controller.RUnlock()

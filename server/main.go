@@ -45,9 +45,9 @@ func run() error {
 	if len(os.Args) != 4 {
 		return fmt.Errorf(
 			"expected 3 arguments:\n" +
-				"1. http api port (e.g. '7000')" +
-				"2. proxy discovery port (e.g. '6775')" +
-				"3. proxy port range (e.g. '8990-9000')")
+				"1. http api port (e.g. '7000')\n" +
+				"2. proxy discovery port (e.g. '6775')\n" +
+				"3. proxy port range (e.g. '8990-9000')\n")
 	}
 	apiPort, err := strconv.Atoi(os.Args[1])
 	if err!=nil {

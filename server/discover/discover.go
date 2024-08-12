@@ -23,16 +23,16 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 			continue
 		}
 		go func() {
-			defer conn.Close()
-			
 			headerLengthBuffer := make([]byte, 2)
 			n, err := conn.Read(headerLengthBuffer)
 			if err!=nil {
 				logrus.Warnf("failed to read length: %v", err)
+				conn.Close()
 				return
 			}
 			if n > len(headerLengthBuffer) {
 				logrus.Warnf("failed to read length: expected %d byte length", len(headerLengthBuffer))
+				conn.Close()
 				return
 			}
 
@@ -42,10 +42,12 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 			n, err = conn.Read(headerBuffer)
 			if err!=nil {
 				logrus.Warnf("failed to read header: %v", err)
+				conn.Close()
 				return
 			}
 			if n < int(headerLength) {
 				logrus.Warnf("failed to read header: expected %d byte header", headerLength)
+				conn.Close()
 				return
 			}
 
@@ -53,6 +55,7 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 			err = json.Unmarshal(headerBuffer, header)
 			if err!=nil {
 				logrus.Warnf("failed to deserialize header: %v", err)
+				conn.Close()
 				return
 			}
 
@@ -62,15 +65,16 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 			port, err := controller.GetPort()
 			if err!=nil {
 				logrus.Warnf("failed to add device: %v", err)
+				conn.Close()
 				return
 			}
 
-			ctx, cancel := context.WithCancel(context.Background())
-
-			device := proxy.NewDevice(cancel, header.Name, conn.RemoteAddr().String(), header.Port)
-			controller.Devices[port] = *device
-
 			go func() {
+				ctx, cancel := context.WithCancel(context.Background())
+				
+				device := proxy.NewDevice(conn, cancel, header.Name, conn.RemoteAddr().String())
+				controller.Devices[port] = *device
+				
 				logrus.Infof("initializing proxy listener for %s %s", device.Name, device.IP)
 				err = proxy.StartProxyListener(ctx, *device, port)
 				if err!=nil {

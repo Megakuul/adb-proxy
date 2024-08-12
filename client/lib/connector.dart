@@ -17,11 +17,12 @@ void ConnectProxy(ServiceInstance service) async {
   int localPort = 0;
 
   service.on("updateRequest").listen((data) async {
+    print("I got pressed from isolate 2");
     if (data != null) {
       state = data["state"] ?? false;
       deviceName = data["device_name"] ?? "undefined";
-      localPort = data["local_port"] ?? 0;
-      proxyPort = data["proxy_port"] ?? 0;
+      localPort = int.tryParse(data["local_port"]) ?? 0;
+      proxyPort = int.tryParse(data["proxy_port"]) ?? 0;
       proxyAddr = data["proxy_addr"] ?? "";
     }
     await ProxySocket?.close();
@@ -30,13 +31,16 @@ void ConnectProxy(ServiceInstance service) async {
     LocalSocket?.destroy();
     if (state) {
       try {
-        ProxySocket = await Socket.connect(proxyAddr, proxyPort);
-        LocalSocket = await Socket.connect("127.0.0.1", localPort);
+        ProxySocket = await Socket.connect("10.1.10.180", 6775);
+        LocalSocket = await Socket.connect("10.1.10.214", 5555);
         await startProxyConnection(ProxySocket!, LocalSocket!, service, deviceName);
-      } catch (e) {
         service.invoke("updateResponse", {
           "state": true,
-          "error": e,
+        });
+      } catch (e) {
+        service.invoke("updateResponse", {
+          "state": false,
+          "error": e.toString(),
         });
       }
     } else {
@@ -56,14 +60,14 @@ Future<void> startProxyConnection(Socket proxySocket, Socket localSocket, Servic
     proxySocket.write(data);
   }, onError: (error) {
     service.invoke("updateResponse", {
-      "error": error,
+      "error": error.toString(),
     });
   });
   proxySocket.listen((data) {
     localSocket.write(data);
   }, onError: (error) {
     service.invoke("updateResponse", {
-      "error": error,
+      "error": error.toString(),
     });
   });
 

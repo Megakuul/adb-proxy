@@ -36,8 +36,26 @@ class ProxyClient extends StatefulWidget {
 
 class _ProxyClientState extends State<ProxyClient> {
 
+  TextEditingController deviceNameController = TextEditingController();
+  TextEditingController devicePortController = TextEditingController();
   TextEditingController proxyAddrController = TextEditingController();
   TextEditingController proxyPortController = TextEditingController();
+
+  bool connectionState = false;
+  String errorMessage = "";
+
+  @override
+  void initState() {
+    super.initState();
+    widget.service.on("updateResponse").listen((data) {
+      if (data != null) {
+        setState(() {
+          connectionState = data["state"] ?? false;
+          errorMessage = data["error"] ?? "";
+        });
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +74,32 @@ class _ProxyClientState extends State<ProxyClient> {
             Expanded(
               child: TextField(
                 decoration: const InputDecoration(
-                  hintText: "Proxy Address"
+                    hintText: "Device Name",
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(12))
+                    )
+                ),
+                controller: deviceNameController,
+              ),
+            ),
+            Expanded(
+              child: TextField(
+                decoration: const InputDecoration(
+                    hintText: "Device Port",
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(12))
+                    )
+                ),
+                controller: devicePortController,
+              ),
+            ),
+            Expanded(
+              child: TextField(
+                decoration: const InputDecoration(
+                    hintText: "Proxy Address",
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(12))
+                    )
                 ),
                 controller: proxyAddrController,
               ),
@@ -64,31 +107,29 @@ class _ProxyClientState extends State<ProxyClient> {
             Expanded(
               child: TextField(
                 decoration: const InputDecoration(
-                    hintText: "Proxy Port"
+                    hintText: "Proxy Port",
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(12))
+                    )
                 ),
                 controller: proxyPortController,
               ),
             ),
+            Text(connectionState ? "ON" : "OFF"),
+            Text(errorMessage),
             OutlinedButton(
               onPressed: () {
-
+                print("I pressed from isolate 1");
+                widget.service.invoke("updateRequest", {
+                  "state":  true,
+                  "device_name": deviceNameController.text,
+                  "local_port": devicePortController.text,
+                  "proxy_addr": proxyAddrController.text,
+                  "proxy_port": proxyPortController.text,
+                });
               },
               child: const Text("Update Proxy Values")
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                OutlinedButton(
-                  onPressed: () => widget.service.startService(),
-                  child: const Text("Start"),
-                ),
-                OutlinedButton(
-                  onPressed: () => widget.service.invoke("stopService"),
-                  child: const Text("Stop"),
-                )
-              ],
-            )
           ],
         )
       ),

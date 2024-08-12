@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -32,7 +33,7 @@ type Device struct {
 	CancelFunc context.CancelFunc
 }
 
-func NewDevice(conn net.Conn, cancelFunc context.CancelFunc, name, ip, port string) *Device {
+func NewDevice(conn net.Conn, cancelFunc context.CancelFunc, name, ip string) *Device {
 	return &Device{
 		Conn: conn,
 		Name: name,
@@ -56,6 +57,7 @@ func StartProxyListener(ctx context.Context, device Device, port uint16) error {
 	
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err!=nil {
+		device.Conn.Close()
 		return fmt.Errorf("failed to initialize proxy: %v", err)
 	}
 
@@ -119,6 +121,7 @@ func proxyClientToDevice(clientConn net.Conn, deviceConn net.Conn, bufferSize in
 			return fmt.Errorf("failed to read incomming request: %v", err)
 		}
 
+		deviceConn.SetWriteDeadline(time.Now().Add(1 * time.Second))
 		_, err = deviceConn.Write(buffer[:n])
 		if err == io.EOF {
 			return nil
@@ -130,6 +133,7 @@ func proxyClientToDevice(clientConn net.Conn, deviceConn net.Conn, bufferSize in
 
 func proxyDeviceToClient(deviceConn net.Conn, clientConn net.Conn, bufferSize int) error {
 	for {
+		deviceConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		buffer := make([]byte, bufferSize)
 		n, err := deviceConn.Read(buffer)
 		if err == io.EOF {
