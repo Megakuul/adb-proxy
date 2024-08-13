@@ -56,28 +56,36 @@ void ConnectProxy(ServiceInstance service) async {
 }
 
 Future<void> startProxyConnection(Socket proxySocket, Socket localSocket, ServiceInstance service, String name) async {
-  localSocket.listen((data) {
-    proxySocket.write(data);
-  }, onError: (error) {
-    service.invoke("updateResponse", {
-      "error": error.toString(),
-    });
-  });
-  proxySocket.listen((data) {
-    localSocket.write(data);
-  }, onError: (error) {
-    service.invoke("updateResponse", {
-      "error": error.toString(),
-    });
-  });
-
   final header = utf8.encode(jsonEncode({
     "name": name,
   }));
-
   final headerLength = ByteData(2)..setUint16(0, header.length, Endian.big);
-
   final payload = headerLength.buffer.asUint8List() + header;
 
-  proxySocket.write(payload);
+  proxySocket.add(payload);
+
+  localSocket.listen((data) {
+    proxySocket.add(data);
+  }, onError: (error) {
+    service.invoke("updateResponse", {
+      "state": false,
+      "error": error.toString(),
+    });
+  }, onDone: () {
+    service.invoke("updateResponse", {
+      "state": false,
+    });
+  });
+  proxySocket.listen((data) {
+    localSocket.add(data);
+  }, onError: (error) {
+    service.invoke("updateResponse", {
+      "state": false,
+      "error": error.toString(),
+    });
+  }, onDone: () {
+    service.invoke("updateResponse", {
+      "state": false,
+    });
+  });
 }
