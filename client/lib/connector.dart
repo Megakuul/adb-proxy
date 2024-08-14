@@ -15,23 +15,40 @@ void ConnectProxy(ServiceInstance service) async {
   String proxyAddr = "";
   int proxyPort = 0;
   int localPort = 0;
+  String localAddr = "";
 
   service.on("updateRequest").listen((data) async {
     if (data != null) {
       state = data["state"] ?? false;
       deviceName = data["device_name"] ?? "undefined";
       localPort = int.tryParse(data["local_port"]) ?? 5555;
+      localAddr = data["local_addr"];
       proxyPort = int.tryParse(data["proxy_port"]) ?? 6775;
       proxyAddr = data["proxy_addr"] ?? "";
     }
-    await ProxySocket?.close();
+
+    try {
+      await ProxySocket?.close();
+    } catch (e) {
+      service.invoke("updateResponse", {
+        "error": e.toString(),
+      });
+    }
     ProxySocket?.destroy();
-    await LocalSocket?.close();
+
+    try {
+      await LocalSocket?.close();
+    } catch (e) {
+      service.invoke("updateResponse", {
+        "error": e.toString(),
+      });
+    }
     LocalSocket?.destroy();
+
     if (state) {
       try {
         ProxySocket = await Socket.connect(proxyAddr, proxyPort);
-        LocalSocket = await Socket.connect("10.1.10.214", 5555);
+        LocalSocket = await Socket.connect(localAddr, localPort);
         await startProxyConnection(ProxySocket!, LocalSocket!, service, deviceName);
         service.invoke("updateResponse", {
           "state": true,

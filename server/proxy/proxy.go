@@ -67,6 +67,7 @@ func StartProxyListener(deviceConnCtx context.Context, deviceConnCancel context.
 	}()
 	
 	for {
+		println("waiting to accept")
 		clientConn, err := listener.Accept()
 		if err!=nil {
 			return fmt.Errorf("failed to accept connection: %v", err)
@@ -87,63 +88,79 @@ func StartProxyListener(deviceConnCtx context.Context, deviceConnCancel context.
 		}()
 		
 		go func() {
-			if err := proxyClientToDevice(clientConn, device.Conn, 1024); err!=nil {
+			disconnectDevice, err := proxyClientToDevice(clientConn, device.Conn, 1024)
+			if err!=nil {
 				logrus.Warnf("%v\n", err)
+			}
+			if disconnectDevice {
 				deviceConnCancel()
 			}
 			cancelProxyConnCtx()
+			println("proxyClientToDevice is done")
 			wg.Done()
 		}()
 		
 		go func() {
-			if err := proxyDeviceToClient(device.Conn, clientConn, 1024); err!=nil {
+			disconnectDevice, err := proxyDeviceToClient(device.Conn, clientConn, 1024)
+			if err!=nil {
 				logrus.Warnf("%v\n", err)
+			}
+			if disconnectDevice {
 				deviceConnCancel()
 			}
 			cancelProxyConnCtx()
+			println("proxyDeviceToClient is done")
 			wg.Done()
 		}()
 
+		println("im waiting")
 		wg.Wait()
+		println("im done")
 	}
 }
 
-func proxyClientToDevice(clientConn net.Conn, deviceConn net.Conn, bufferSize int) error {
+func proxyClientToDevice(clientConn net.Conn, deviceConn net.Conn, bufferSize int) (bool, error) {
 	for {
 		buffer := make([]byte, bufferSize)
 		n, err := clientConn.Read(buffer)
 		if err == io.EOF {
-			return nil
+			println("eof from client")
+			return false, nil
 		} else if err!=nil {
-			return fmt.Errorf("failed to read incomming request: %v", err)
+			return false, fmt.Errorf("failed to read incomming request: %v", err)
 		}
 
 		deviceConn.SetWriteDeadline(time.Now().Add(1 * time.Second))
 		_, err = deviceConn.Write(buffer[:n])
 		if err == io.EOF {
-			return nil
+			return true, nil
 		} else if err!=nil {
-			return fmt.Errorf("failed to proxy incomming request: %v", err)
+			if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+				return true, fmt.Errorf("failed to proxy incomming request: %v", err)
+			}
 		}
 	}
 }
 
-func proxyDeviceToClient(deviceConn net.Conn, clientConn net.Conn, bufferSize int) error {
+func proxyDeviceToClient(deviceConn net.Conn, clientConn net.Conn, bufferSize int) (bool, error) {
 	for {
 		deviceConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		buffer := make([]byte, bufferSize)
 		n, err := deviceConn.Read(buffer)
 		if err == io.EOF {
-			return nil
+			return true, nil
 		} else if err!=nil {
-			return fmt.Errorf("failed to read incomming response: %v", err)
-		}
+			if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+				return true, fmt.Errorf("failed to read incomming response: %v", err)
+			}
+		} 
 
 		_, err = clientConn.Write(buffer[:n])
 		if err == io.EOF {
-			return nil
+			println("eof from client")
+			return false, nil
 		} else if err!=nil {
-			return fmt.Errorf("failed to proxy incomming response: %v", err)
+			return false, fmt.Errorf("failed to proxy incomming response: %v", err)
 		}
 	}
 }
