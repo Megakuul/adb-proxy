@@ -17,12 +17,11 @@ void ConnectProxy(ServiceInstance service) async {
   int localPort = 0;
 
   service.on("updateRequest").listen((data) async {
-    print("I got pressed from isolate 2");
     if (data != null) {
       state = data["state"] ?? false;
       deviceName = data["device_name"] ?? "undefined";
-      localPort = int.tryParse(data["local_port"]) ?? 0;
-      proxyPort = int.tryParse(data["proxy_port"]) ?? 0;
+      localPort = int.tryParse(data["local_port"]) ?? 5555;
+      proxyPort = int.tryParse(data["proxy_port"]) ?? 6775;
       proxyAddr = data["proxy_addr"] ?? "";
     }
     await ProxySocket?.close();
@@ -31,7 +30,7 @@ void ConnectProxy(ServiceInstance service) async {
     LocalSocket?.destroy();
     if (state) {
       try {
-        ProxySocket = await Socket.connect("10.1.10.180", 6775);
+        ProxySocket = await Socket.connect(proxyAddr, proxyPort);
         LocalSocket = await Socket.connect("10.1.10.214", 5555);
         await startProxyConnection(ProxySocket!, LocalSocket!, service, deviceName);
         service.invoke("updateResponse", {

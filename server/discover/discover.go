@@ -22,30 +22,17 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 			logrus.Warnf("failed to accept connection: %v", err)
 			continue
 		}
-		go func() {
-			// even if indicated by go, there is no context leak here,
-			// the context is defered to be closed after the the proxy listener stops (inside the goroutine).
-			// TODO: find a cleaner way to solve this (because the static analysis emits a warning
-			// it is possible to actually have a leak without notice)
-			deviceConnCtx, deviceConnCancel := context.WithCancel(context.Background())
-			go func() {
-				defer conn.Close()
-				select {
-				case <- deviceConnCtx.Done():
-					return
-				}
-			}()
-			
+		go func() {			
 			headerLengthBuffer := make([]byte, 2)
 			n, err := conn.Read(headerLengthBuffer)
 			if err!=nil {
 				logrus.Warnf("failed to read length: %v", err)
-				deviceConnCancel()
+				conn.Close()
 				return
 			}
 			if n < len(headerLengthBuffer) {
 				logrus.Warnf("failed to read length: expected %d byte length", len(headerLengthBuffer))
-				deviceConnCancel()
+				conn.Close()
 				return
 			}
 
@@ -55,12 +42,12 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 			n, err = conn.Read(headerBuffer)
 			if err!=nil {
 				logrus.Warnf("failed to read header: %v", err)
-				deviceConnCancel()
+				conn.Close()
 				return
 			}
 			if n < int(headerLength) {
 				logrus.Warnf("failed to read header: expected %d byte header", headerLength)
-				deviceConnCancel()
+				conn.Close()
 				return
 			}
 
@@ -68,7 +55,7 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 			err = json.Unmarshal(headerBuffer, header)
 			if err!=nil {
 				logrus.Warnf("failed to deserialize header: %v", err)
-				deviceConnCancel()
+				conn.Close()
 				return
 			}
 
@@ -78,12 +65,19 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 			port, err := controller.GetPort()
 			if err!=nil {
 				logrus.Warnf("failed to add device: %v", err)
-				deviceConnCancel()
+				conn.Close()
 				return
 			}
 
 			go func() {
 				deviceConnCtx, deviceConnCancel := context.WithCancel(context.Background())
+				go func() {
+					defer conn.Close()
+					select {
+					case <- deviceConnCtx.Done():
+						return
+					}
+				}()
 				defer deviceConnCancel()
 				
 				device := proxy.NewDevice(conn, deviceConnCancel, header.Name, conn.RemoteAddr().String())
