@@ -1,5 +1,7 @@
 # adb-proxy
 
+![adb-proxy icon](/favicon.png)
+
 adb-proxy is a simple application serving as a proof-of-concept for creating a proxy that allows devices (with corresponding client software) to register themselves. 
 This enables the end user to access the devices adb ports via the proxy. 
 

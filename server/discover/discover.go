@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"net"
+	"time"
 
 	"github.com/megakuul/adb-proxy/server/proxy"
 	"github.com/sirupsen/logrus"
@@ -82,6 +83,8 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 				
 				device := proxy.NewDevice(conn, deviceConnCancel, header.Name, conn.RemoteAddr().String())
 				controller.Devices[port] = *device
+
+				go device.KeepaliveDevice(deviceConnCtx, time.Second * 1)
 				
 				logrus.Infof("initializing proxy listener for %s %s", device.Name, device.IP)
 				err = proxy.StartProxyListener(deviceConnCtx, deviceConnCancel, *device, port)

@@ -55,7 +55,7 @@ func run() error {
 	}
 	proxyPort, err := strconv.Atoi(os.Args[2])
 	if err!=nil {
-		return fmt.Errorf("failed to parse http api port")
+		return fmt.Errorf("failed to parse proxy port")
 	}
 	firstPort, lastPort, err := parsePortRange(os.Args[3])
 	if err!=nil {
