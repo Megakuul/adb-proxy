@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"net"
-	"time"
 
 	"github.com/megakuul/adb-proxy/server/proxy"
 	"github.com/sirupsen/logrus"
@@ -60,10 +59,7 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 				return
 			}
 
-			controller.Lock()
-			defer controller.Unlock()
-
-			port, err := controller.GetPort()
+			port, err := controller.ReservePort()
 			if err!=nil {
 				logrus.Warnf("failed to add device: %v", err)
 				conn.Close()
@@ -80,21 +76,29 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 					}
 				}()
 				defer deviceConnCancel()
-				
-				device := proxy.NewDevice(conn, deviceConnCancel, header.Name, conn.RemoteAddr().String())
-				controller.Devices[port] = *device
 
-				go device.KeepaliveDevice(deviceConnCtx, time.Second * 1)
+				deviceAddr, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+				if err != nil {
+					logrus.Warnf("failed to parse device addr: %v\n", err)
+					return
+				}
+				device := proxy.NewDevice(conn, deviceConnCancel, port, header.Name, deviceAddr)
+
+				oldDevice, exists := controller.GetDevice(deviceAddr)
+				if exists {
+					oldDevice.CancelFunc()
+				}
 				
-				logrus.Infof("initializing proxy listener for %s %s", device.Name, device.IP)
+				controller.AddDevice(deviceAddr, device)
+				
+				logrus.Infof("initializing proxy listener for %s %s", device.Name, device.Addr)
 				err = proxy.StartProxyListener(deviceConnCtx, deviceConnCancel, *device, port)
 				if err!=nil {
 					logrus.Warnf("%v\n", err)
 				}
 
-				controller.Lock()
-				defer controller.Unlock()
-				delete(controller.Devices, port)
+				controller.RemoveDevice(deviceAddr)
+				controller.ReleasePort(port)
 			}()
 		}()
 	}

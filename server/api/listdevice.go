@@ -30,17 +30,14 @@ type listDeviceResponse struct {
 }
 
 func (h *ListDeviceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.controller.RLock()
-	
 	listDeviceResponse := &listDeviceResponse{}
-	for k, v := range h.controller.Devices {
+	for _, dev := range h.controller.ListDevices() {
 		listDeviceResponse.Devices = append(listDeviceResponse.Devices, device{
-			ProxyPort: strconv.Itoa(int(k)),
-			DeviceName: v.Name,
-			DeviceAddr: v.IP,
+			ProxyPort: strconv.Itoa(int(dev.ProxyPort)),
+			DeviceName: dev.Name,
+			DeviceAddr: dev.Addr,
 		})
 	}
-	h.controller.RUnlock()
 
 	resp, err := json.Marshal(&listDeviceResponse)
 	if err!=nil {
@@ -52,7 +49,7 @@ func (h *ListDeviceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Add("Content-Type", "text/plain")
+	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(resp)
 	return
