@@ -6,11 +6,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/megakuul/adb-proxy/server/api"
 	"github.com/megakuul/adb-proxy/server/discover"
 	"github.com/megakuul/adb-proxy/server/proxy"
+	"github.com/sirupsen/logrus"
 )
 
 func parsePortRange(arg string) (int, int, error) {
@@ -42,12 +43,13 @@ func main() {
 }
 
 func run() error {
-	if len(os.Args) != 4 {
+	if len(os.Args) != 5 {
 		return fmt.Errorf(
 			"expected 3 arguments:\n" +
 				"1. http api port (e.g. '7000')\n" +
 				"2. proxy discovery port (e.g. '6775')\n" +
-				"3. proxy port range (e.g. '8990-9000')\n")
+				"3. proxy port range (e.g. '8990-9000')\n" +
+				"4. device timeout (e.g. '1h')\n")
 	}
 	apiPort, err := strconv.Atoi(os.Args[1])
 	if err!=nil {
@@ -58,6 +60,10 @@ func run() error {
 		return fmt.Errorf("failed to parse proxy port")
 	}
 	firstPort, lastPort, err := parsePortRange(os.Args[3])
+	if err!=nil {
+		return fmt.Errorf("failed to parse argument: %v", err)
+	}
+	deviceTimeout, err := time.ParseDuration(os.Args[4])
 	if err!=nil {
 		return fmt.Errorf("failed to parse argument: %v", err)
 	}
@@ -76,7 +82,7 @@ func run() error {
 	if err!=nil {
 		return fmt.Errorf("failed to listen: %v", err)
 	}
-	discover.StartDiscoverListener(listener, deviceController)
+	discover.StartDiscoverListener(listener, deviceController, deviceTimeout)
 
 	return nil
 }

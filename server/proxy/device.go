@@ -21,12 +21,12 @@ type Device struct {
 
 func NewDevice(conn net.Conn, cancelFunc context.CancelFunc, proxyPort uint16, name, addr string) *Device {
 	return &Device{
-		ConnReadLock: &sync.Mutex{},
-		ConnWriteLock: &sync.Mutex{},
-		Conn: conn,
 		Name: name,
 		Addr: addr,
 		ProxyPort: proxyPort,
+		ConnReadLock: &sync.Mutex{},
+		ConnWriteLock: &sync.Mutex{},
+		Conn: conn,
 		CancelFunc: cancelFunc,
 	}
 }

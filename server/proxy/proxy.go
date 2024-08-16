@@ -11,8 +11,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func StartProxyListener(deviceConnCtx context.Context, deviceConnCancel context.CancelFunc, device Device, port uint16) error {	
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+func StartProxyListener(deviceConnCtx context.Context, deviceConnCancel context.CancelFunc, device Device, timeout time.Duration) error {	
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", device.ProxyPort))
 	if err!=nil {
 		device.Conn.Close()
 		return fmt.Errorf("failed to initialize proxy: %v", err)
@@ -27,10 +27,18 @@ func StartProxyListener(deviceConnCtx context.Context, deviceConnCancel context.
 	}()
 	
 	for {
+		err = listener.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
+		if err!=nil {
+			return fmt.Errorf("failed to set timeout: %v", err)
+		}
+		
 		clientConn, err := listener.Accept()
 		if err == io.EOF {
 			return nil
 		} else if err!=nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return fmt.Errorf("timeout for device: %s exceeded", device.Name)
+			}
 			return fmt.Errorf("failed to accept connection: %v", err)
 		}
 
@@ -84,7 +92,9 @@ func proxyClientToDevice(clientConn net.Conn, device Device, bufferSize int) (bo
 		if err == io.EOF {
 			return false, nil
 		} else if err!=nil {
-			return false, fmt.Errorf("failed to read incomming request: %v", err)
+			if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+				return false, fmt.Errorf("failed to read incomming request: %v", err)
+			}
 		}
 
 		device.ConnWriteLock.Lock()
@@ -93,9 +103,7 @@ func proxyClientToDevice(clientConn net.Conn, device Device, bufferSize int) (bo
 		if err == io.EOF {
 			return true, nil
 		} else if err!=nil {
-			if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
-				return true, fmt.Errorf("failed to proxy incomming request: %v", err)
-			}
+			return true, fmt.Errorf("failed to proxy incomming request: %v", err)
 		}
 	}
 }

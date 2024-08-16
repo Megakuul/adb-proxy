@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"net"
+	"time"
 
 	"github.com/megakuul/adb-proxy/server/proxy"
 	"github.com/sirupsen/logrus"
@@ -12,10 +13,9 @@ import (
 
 type DiscoverRequestHeader struct {
 	Name string `json:"name"`
-	Port string `json:"port"`
 }
 
-func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceController) {
+func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceController, deviceTimeout time.Duration) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -92,7 +92,7 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 				controller.AddDevice(deviceAddr, device)
 				
 				logrus.Infof("initializing proxy listener for %s %s", device.Name, device.Addr)
-				err = proxy.StartProxyListener(deviceConnCtx, deviceConnCancel, *device, port)
+				err = proxy.StartProxyListener(deviceConnCtx, deviceConnCancel, *device, deviceTimeout)
 				if err!=nil {
 					logrus.Warnf("%v\n", err)
 				}
