@@ -1,4 +1,4 @@
-package ch.megakuul.client
+package ch.megakuul.adbproxy
 
 import io.flutter.embedding.android.FlutterActivity
 

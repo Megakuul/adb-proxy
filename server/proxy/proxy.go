@@ -98,13 +98,15 @@ func proxyClientToDevice(clientConn net.Conn, device Device, bufferSize int) (bo
 		}
 
 		device.ConnWriteLock.Lock()
-		defer device.ConnWriteLock.Unlock()
 		_, err = device.Conn.Write(buffer[:n])
 		if err == io.EOF {
+			device.ConnWriteLock.Unlock()
 			return true, nil
 		} else if err!=nil {
+			device.ConnWriteLock.Unlock()
 			return true, fmt.Errorf("failed to proxy incomming request: %v", err)
 		}
+		device.ConnWriteLock.Unlock()
 	}
 }
 

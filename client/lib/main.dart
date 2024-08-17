@@ -3,18 +3,129 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
-import 'connector.dart';
+@pragma('vm:entry-point')
+void connectProxy(ServiceInstance? service) async {
+  if (service==null) {
+    return;
+  }
+
+  Socket? proxySocket;
+  Socket? localSocket;
+
+  bool state = false;
+  String deviceName = "";
+  String proxyAddr = "";
+  int proxyPort = 0;
+  int localPort = 0;
+  String localAddr = "";
+
+  service!.on("updateRequest").listen((data) async {
+    if (data != null) {
+      state = data["state"] ?? false;
+      deviceName = data["device_name"] ?? "undefined";
+      localPort = int.tryParse(data["local_port"]) ?? 5555;
+      localAddr = data["local_addr"] ?? "";
+      proxyPort = int.tryParse(data["proxy_port"]) ?? 6775;
+      proxyAddr = data["proxy_addr"] ?? "";
+    }
+
+    try {
+      await proxySocket?.close();
+    } catch (e) {
+      service.invoke("updateResponse", {
+        "error": e.toString(),
+      });
+    }
+    proxySocket?.destroy();
+
+    try {
+      await localSocket?.close();
+    } catch (e) {
+      service.invoke("updateResponse", {
+        "error": e.toString(),
+      });
+    }
+    localSocket?.destroy();
+
+    if (state) {
+      try {
+        proxySocket = await Socket.connect(proxyAddr, proxyPort);
+        localSocket = await Socket.connect(localAddr, localPort);
+        await startProxyConnection(proxySocket!, localSocket!, service, deviceName);
+        service.invoke("updateResponse", {
+          "state": true,
+        });
+      } catch (e) {
+        service.invoke("updateResponse", {
+          "state": false,
+          "error": e.toString(),
+        });
+      }
+    } else {
+      service.invoke("updateResponse", {
+        "state": false,
+      });
+    }
+  });
+
+  service.on("stopService").listen((event) {
+    service.stopSelf();
+  });
+}
+
+Future<void> startProxyConnection(Socket proxySocket, Socket localSocket, ServiceInstance service, String name) async {
+  final header = utf8.encode(jsonEncode({
+    "name": name,
+  }));
+  final headerLength = ByteData(2)..setUint16(0, header.length, Endian.big);
+  final payload = headerLength.buffer.asUint8List() + header;
+
+  proxySocket.add(payload);
+
+  localSocket.listen((data) {
+    proxySocket.add(data);
+  }, onError: (error) {
+    service.invoke("updateResponse", {
+      "state": false,
+      "error": error.toString(),
+    });
+  }, onDone: () {
+    service.invoke("updateResponse", {
+      "state": false,
+    });
+  });
+  proxySocket.listen((data) {
+    localSocket.add(data);
+  }, onError: (error) {
+    service.invoke("updateResponse", {
+      "state": false,
+      "error": error.toString(),
+    });
+  }, onDone: () {
+    service.invoke("updateResponse", {
+      "state": false,
+    });
+  });
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final service = FlutterBackgroundService();
 
+  connectProxy(null);
+
   await service.configure(
     androidConfiguration: AndroidConfiguration(
-      onStart: ConnectProxy,
+      onStart: connectProxy,
       isForegroundMode: false,
-      autoStart: true
+      autoStart: true,
+      notificationChannelId: 'adb_proxy_connector_channel',
+      initialNotificationTitle: 'ADB Proxy Launched',
+      initialNotificationContent: 'ADB Proxy Connector is running in the background.',
     ),
     // Empty IOS configuration.
     iosConfiguration: IosConfiguration(
@@ -45,7 +156,7 @@ class _ProxyClientState extends State<ProxyClient> {
   TextEditingController proxyPortController = TextEditingController();
 
   List<DropdownMenuItem<String>> deviceAddressList = [];
-  String? deviceAddress = null;
+  String? deviceAddress;
 
   Future<void> _initDeviceAddressList() async {
     deviceAddressList = [];
