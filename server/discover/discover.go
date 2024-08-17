@@ -1,7 +1,6 @@
 package discover
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/json"
 	"net"
@@ -65,38 +64,32 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 				conn.Close()
 				return
 			}
+			println(port)
 
 			go func() {
-				deviceConnCtx, deviceConnCancel := context.WithCancel(context.Background())
-				go func() {
-					defer conn.Close()
-					select {
-					case <- deviceConnCtx.Done():
-						return
-					}
-				}()
-				defer deviceConnCancel()
-
 				deviceAddr, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 				if err != nil {
 					logrus.Warnf("failed to parse device addr: %v\n", err)
 					return
 				}
-				device := proxy.NewDevice(conn, deviceConnCancel, port, header.Name, deviceAddr)
-
+				device := proxy.NewDevice(conn, port, header.Name, deviceAddr, deviceTimeout)
+				
 				oldDevice, exists := controller.GetDevice(deviceAddr)
 				if exists {
-					oldDevice.CancelFunc()
+					oldDevice.Close()
 				}
 				
 				controller.AddDevice(deviceAddr, device)
 				
-				logrus.Infof("initializing proxy listener for %s %s", device.Name, device.Addr)
-				err = proxy.StartProxyListener(deviceConnCtx, deviceConnCancel, *device, deviceTimeout)
+				logrus.Infof("initializing proxy listener (:%d) for %s %s",
+					device.GetPort(), device.GetName(), device.GetAddr())
+				
+				err = device.StartProxyListener()
 				if err!=nil {
 					logrus.Warnf("%v\n", err)
 				}
 
+				device.Close()
 				controller.RemoveDevice(deviceAddr)
 				controller.ReleasePort(port)
 			}()

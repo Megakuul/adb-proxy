@@ -33,9 +33,9 @@ func (h *ListDeviceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	listDeviceResponse := &listDeviceResponse{}
 	for _, dev := range h.controller.ListDevices() {
 		listDeviceResponse.Devices = append(listDeviceResponse.Devices, device{
-			ProxyPort: strconv.Itoa(int(dev.ProxyPort)),
-			DeviceName: dev.Name,
-			DeviceAddr: dev.Addr,
+			ProxyPort: strconv.Itoa(int(dev.GetPort())),
+			DeviceName: dev.GetName(),
+			DeviceAddr: dev.GetAddr(),
 		})
 	}
 

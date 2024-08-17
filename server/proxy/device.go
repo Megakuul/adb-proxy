@@ -3,99 +3,201 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"sync"
+	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 
 type Device struct {
-	Name string
-	Addr string
-	ProxyPort uint16
+	name string
+	addr string
+	proxyPort uint16
+	timeout time.Duration
+
+	ctx context.Context
+	cancel context.CancelFunc
+	wg *sync.WaitGroup
 	
-	ConnReadLock *sync.Mutex
-	ConnWriteLock *sync.Mutex
-	Conn net.Conn
-	CancelFunc context.CancelFunc
+	connReadLock *sync.Mutex
+	connWriteLock *sync.Mutex
+	conn net.Conn
 }
 
-func NewDevice(conn net.Conn, cancelFunc context.CancelFunc, proxyPort uint16, name, addr string) *Device {
+func NewDevice(
+	conn net.Conn,
+	proxyPort uint16,
+	name, addr string,
+	timeout time.Duration) *Device {
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		defer conn.Close()
+		select {
+		case <- ctx.Done():
+			return
+		}
+	}()
+	
 	return &Device{
-		Name: name,
-		Addr: addr,
-		ProxyPort: proxyPort,
-		ConnReadLock: &sync.Mutex{},
-		ConnWriteLock: &sync.Mutex{},
-		Conn: conn,
-		CancelFunc: cancelFunc,
+		name: name,
+		addr: addr,
+		proxyPort: proxyPort,
+		timeout: timeout,
+		ctx: ctx,
+		cancel: cancel,
+		conn: conn,
+		connReadLock: &sync.Mutex{},
+		connWriteLock: &sync.Mutex{},
 	}
 }
 
-
-
-type DeviceController struct {
-	sync.RWMutex
-	firstPort uint16
-	lastPort uint16
-	portLocks map[uint16]bool
-	devices map[string]*Device
+func (d* Device) GetName() string {
+	return d.name
 }
 
-func NewDeviceController(firstPort uint16, lastPort uint16) *DeviceController {
-	return &DeviceController{
-		firstPort: firstPort,
-		lastPort: lastPort,
-		portLocks: map[uint16]bool{},
-		devices: map[string]*Device{},
+func (d* Device) GetAddr() string {
+	return d.addr
+}
+
+func (d* Device) GetPort() uint16 {
+	return d.proxyPort
+}
+
+func (d* Device) Close() {
+	d.cancel()
+	d.wg.Wait()
+}
+
+
+func (d* Device) proxyClientToDevice(clientConn net.Conn, bufferSize int) (bool, error) {
+	for {
+		clientConn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		buffer := make([]byte, bufferSize)
+		n, err := clientConn.Read(buffer)
+		if err == io.EOF {
+			return false, nil
+		} else if err!=nil {
+			if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+				return false, fmt.Errorf("failed to read incomming request: %v", err)
+			}
+		}
+
+		d.connWriteLock.Lock()
+		_, err = d.conn.Write(buffer[:n])
+		if err == io.EOF {
+			d.connWriteLock.Unlock()
+			return true, nil
+		} else if err!=nil {
+			d.connWriteLock.Unlock()
+			return true, fmt.Errorf("failed to proxy incomming request: %v", err)
+		}
+		d.connWriteLock.Unlock()
 	}
 }
 
-func (d *DeviceController) GetDevice(addr string) (*Device, bool) {
-	d.RLock()
-	defer d.RUnlock()
-	if dev, exists := d.devices[addr]; exists {
-		return dev, true
-	} else {
-		return nil, false
-	}
-}
+func (d* Device) proxyDeviceToClient(clientConn net.Conn, bufferSize int) (bool, error) {
+	for {
+		d.connReadLock.Lock()
+		d.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		buffer := make([]byte, bufferSize)
+		n, err := d.conn.Read(buffer)
+		if err == io.EOF {
+			d.connReadLock.Unlock()
+			return true, nil
+		} else if err!=nil {
+			if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+				d.connReadLock.Unlock()
+				return true, fmt.Errorf("failed to read incomming response: %v", err)
+			}
+		}
+		d.connReadLock.Unlock()
 
-func (d *DeviceController) ListDevices() []*Device {
-	d.RLock()
-	defer d.RUnlock()
-	devices := []*Device{}
-	for _, dev := range d.devices {
-		devices = append(devices, dev)
-	}
-	return devices
-}
-
-func (d *DeviceController) AddDevice(addr string, device *Device) {
-	d.Lock()
-	defer d.Unlock()
-	d.devices[addr] = device
-}
-
-func (d *DeviceController) RemoveDevice(addr string) {
-	d.Lock()
-	defer d.Unlock()
-	delete(d.devices, addr)
-}
-
-func (d *DeviceController) ReservePort() (uint16, error) {
-	d.Lock()
-	defer d.Unlock()
-	for i := d.firstPort; i <= d.lastPort; i++ {
-		if locked, exists := d.portLocks[i]; !exists || !locked {
-			d.portLocks[i] = true
-			return i, nil
+		_, err = clientConn.Write(buffer[:n])
+		if err == io.EOF {
+			return false, nil
+		} else if err!=nil {
+			return false, fmt.Errorf("failed to proxy incomming response: %v", err)
 		}
 	}
-	return 0, fmt.Errorf("no port available")
 }
 
-func (d *DeviceController) ReleasePort(port uint16) {
-	d.Lock()
-	defer d.Unlock()
-	d.portLocks[port] = false
+func (d* Device) StartProxyListener() error {
+	d.wg.Add(1)
+	defer d.wg.Done()
+	
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", d.proxyPort))
+	if err!=nil {
+		return fmt.Errorf("failed to initialize proxy: %v", err)
+	}
+
+	go func() {
+		defer listener.Close()
+		select {
+		case <- d.ctx.Done():
+			return
+		}
+	}()
+	
+	for {
+		err = listener.(*net.TCPListener).SetDeadline(time.Now().Add(d.timeout))
+		if err!=nil {
+			return fmt.Errorf("failed to set timeout: %v", err)
+		}
+		
+		clientConn, err := listener.Accept()
+		if err == io.EOF {
+			return nil
+		} else if err!=nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return fmt.Errorf("timeout for device: %s exceeded", d.name)
+			}
+			return fmt.Errorf("failed to accept connection: %v", err)
+		}
+
+		proxyConnCtx, cancelProxyConnCtx := context.WithCancel(d.ctx)
+		defer cancelProxyConnCtx()
+		
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer clientConn.Close()
+			select {
+			case <-proxyConnCtx.Done():
+				return
+			}
+		}()
+		
+		go func() {
+			disconnectDevice, err := d.proxyClientToDevice(clientConn, 1024)
+			if err!=nil {
+				logrus.Warnf("%v\n", err)
+			}
+			if disconnectDevice {
+				d.cancel()
+			}
+			cancelProxyConnCtx()
+			wg.Done()
+		}()
+		
+		go func() {
+			disconnectDevice, err := d.proxyDeviceToClient(clientConn, 1024)
+			if err!=nil {
+				logrus.Warnf("%v\n", err)
+			}
+			if disconnectDevice {
+				d.cancel()
+			}
+			cancelProxyConnCtx()
+			wg.Done()
+		}()
+
+		wg.Wait()
+	}
 }
+

@@ -68,10 +68,10 @@ void connectProxy(ServiceInstance? service) async {
       try {
         proxySocket = await Socket.connect(proxyAddr, proxyPort);
         localSocket = await Socket.connect(localAddr, localPort);
-        await startProxyConnection(proxySocket!, localSocket!, service, deviceName);
         service.invoke("updateResponse", {
           "state": true,
         });
+        await startProxyConnection(proxySocket!, localSocket!, service, deviceName);
       } catch (e) {
         service.invoke("updateResponse", {
           "state": false,
