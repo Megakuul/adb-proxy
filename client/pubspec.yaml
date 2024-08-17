@@ -37,6 +37,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_background_service: ^5.0.7
   google_fonts: ^6.2.1
+  flutter_local_notifications: ^17.2.2
 
 dev_dependencies:
   flutter_test:
