@@ -64,7 +64,6 @@ func StartDiscoverListener(listener net.Listener, controller *proxy.DeviceContro
 				conn.Close()
 				return
 			}
-			println(port)
 
 			go func() {
 				deviceAddr, _, err := net.SplitHostPort(conn.RemoteAddr().String())

@@ -50,6 +50,7 @@ func NewDevice(
 		timeout: timeout,
 		ctx: ctx,
 		cancel: cancel,
+		wg: &sync.WaitGroup{},
 		conn: conn,
 		connReadLock: &sync.Mutex{},
 		connWriteLock: &sync.Mutex{},
